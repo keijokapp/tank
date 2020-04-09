@@ -1,0 +1,19 @@
+{
+  "name": "tank",
+  "version": "0.0.0",
+  "private": true,
+  "description": "",
+  "scripts": {
+    "start": "node index.js",
+    "lint": "eslint ."
+  },
+  "devDependencies": {
+    "eslint": "^6.8.0",
+    "eslint-config-airbnb-base": "^14.1.0"
+  },
+  "dependencies": {
+    "eslint-plugin-import": "^2.20.2",
+    "express": "^4.17.1",
+    "ws": "^7.1.2"
+  }
+}
