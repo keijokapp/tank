@@ -1,0 +1,67 @@
+<html>
+	<link rel="icon" href="data:,"/>
+	<style>
+div, body {
+	margin: 0;
+	padding: 0;
+}
+
+video {
+	border: 1px solid black;
+}
+
+.grid {
+	display: flex;
+	flex-wrap: wrap;
+	max-width: 1080px;
+	margin: auto;
+}
+
+.box {
+	background-color: #444;
+	color: #fff;
+	font-size: 150%;
+	outline: 1px solid black;
+}
+
+.box.video {
+	width: 100%;
+	text-align: center;
+}
+
+.box.switches {
+	flex-grow: 1;
+	padding: 10px 60px;
+}
+
+.joystick-control {
+	cursor: crosshair;
+	touch-action: none;
+}
+
+.hand-control {
+	cursor: pointer;
+}
+	</style>
+	<body>
+		<div class="grid">
+			<div class="box controls">
+				<svg id="joystick" class="joystick-control" width="300" height="300">
+					<circle cx="150" cy="150" r="100" stroke="black" fill="transparent" stroke-width="3"/>
+					<line x1="50" x2="250" y1="150" y2="150" stroke="black" stroke-width="3"/>
+					<line x1="150" x2="150" y1="50" y2="250" stroke="black" stroke-width="3"/>
+					<circle id="joystick-position" cx="150" cy="150" r="5" fill="blue"/>
+				</svg>
+				<svg width="200" height="300">
+					<polygon id="primary-up" class="hand-control" points="40,75 20,100 32,100 32,140 48,140 48,100 60,100" fill="gray" />
+					<polygon id="primary-down" class="hand-control" points="40,225 20,200 32,200 32,160 48,160 48,200 60,200" fill="gray" />
+					<polygon id="secondary-up" class="hand-control" points="130,75 110,100 122,100 122,140 138,140 138,100 150,100" fill="gray" />
+					<polygon id="secondary-down" class="hand-control" points="130,225 110,200 122,200 122,160 138,160 138,200 150,200" fill="gray" />
+				</svg>
+			</div>
+			<div class="box switches">
+			</div>
+		</div>
+		<script src="standalone-bundle.js" type="module"></script>
+	</body>
+</html>
