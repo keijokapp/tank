@@ -305,10 +305,18 @@ function initServerConnection() {
 }
 
 function createPeerConnection(offer, sendServerMessage, subscribeServerMessage) {
-	let offerIndex = offer ? 1 : 0; // debug only
+	// This function looks disasterous because Chromiums's implementation of WebRTC is disaster
+	// More information: https://bugs.chromium.org/p/chromium/issues/detail?id=980872 and issues it's blocked on
 
 	const trackSubscribers = new Set();
 	const dataChannelSubscribers = new Set();
+	const polite = !offer;
+	let offerIndex = offer ? 1 : 0; // debug only
+	let connectionId = null;
+	let negotiating = false;
+	let ignoring = null; // latest incoming offer being ignored
+	let needsNegotiation = null;
+	let answerSet = false;
 
 	const pc = new RTCPeerConnection({
 		iceServers: [{
@@ -317,11 +325,6 @@ function createPeerConnection(offer, sendServerMessage, subscribeServerMessage) 
 			credential: 'BEtwbSeUbApfjqj9'
 		}]
 	});
-
-	const polite = !offer;
-	let connectionId = null;
-	let negotiating = false;
-	let ignoring = null; // latest incoming offer being ignored
 
 	pc.addEventListener('connectionstatechange', () => {
 		console.log('Connection state: %s', pc.connectionState);
@@ -383,28 +386,39 @@ function createPeerConnection(offer, sendServerMessage, subscribeServerMessage) 
 	pc.addEventListener('negotiationneeded', () => {
 		const sdpId = offerIndex;
 		offerIndex += 2;
-		negotiating = true;
-		console.log('[%s] [%s] Setting local description', sdpId, pc.signalingState);
-		pc.setLocalDescription()
-			.then(() => {
-				const offer = pc.localDescription;
-				console.assert(offer.type === 'offer', 'Unexpected offer type %s', offer.type);
-				console.assert(pc.signalingState === 'have-local-offer', 'Unexpected signaling state %s', pc.signalingState);
-				console.log('[%s] [%s] Local %s has been set', sdpId, pc.signalingState, offer.type);
-				sendServerMessage({ connectionId, sdpId, sdp: offer });
-				if (!connectionId) {
-					connectionId = offer.sdp;
-				}
-				if (polite) {
-					negotiating = false;
-				}
-			}, e => {
-				console.error(e);
-				pc.close();
-			});
+		if (needsNegotiation !== null) {
+			console.warn('[%s] [%s] Cancelling', sdpId, pc.signalingState);
+		} else if (negotiating) {
+			console.warn('[%s] [%s] Deferring', sdpId, pc.signalingState);
+			needsNegotiation = sdpId;
+		} else {
+			negotiate(sdpId);
+		}
 	});
 
-	function handleRemoteOffer(offer, sdpId) {
+	async function negotiate(sdpId) {
+		negotiating = true;
+		answerSet = false;
+		console.log('[%s] [%s] Setting local description', sdpId, pc.signalingState);
+		try {
+			await pc.setLocalDescription();
+			const offer = pc.localDescription;
+			console.assert(offer.type === 'offer', 'Unexpected offer type %s', offer.type);
+			console.assert(pc.signalingState === 'have-local-offer', 'Unexpected signaling state %s', pc.signalingState);
+			console.log('[%s] [%s] Local %s has been set', sdpId, pc.signalingState, offer.type);
+			sendServerMessage({ connectionId, sdpId, sdp: offer });
+			if (!connectionId) {
+				connectionId = offer.sdp;
+			}
+		} catch (e) {
+			console.error(e);
+			pc.close();
+		}
+	}
+
+	window.negotiate = negotiate;
+
+	async function handleRemoteOffer(offer, sdpId) {
 		console.assert(offer.type === 'offer', 'Unexpected offer type %s', offer.type);
 		if (!polite && negotiating) {
 			ignoring = sdpId;
@@ -412,43 +426,74 @@ function createPeerConnection(offer, sendServerMessage, subscribeServerMessage) 
 		} else {
 			ignoring = null;
 			console.log('[%s] [%s] Setting remote %s', sdpId, pc.signalingState, offer.type);
-			const rollbackPromise = negotiating ? pc.setLocalDescription({ type: 'rollback' }) : Promise.resolve();
+			const needsRollback = negotiating && !answerSet;
 			negotiating = true;
-			Promise.all([rollbackPromise, pc.setRemoteDescription(offer)])
-				.then(() => {
-					console.log('[%s] [%s] Remote %s has been set', sdpId, pc.signalingState, offer.type);
-					return pc.setLocalDescription();
-				})
-				.then(() => {
-					const answer = pc.localDescription;
-					console.assert(answer.type === 'answer');
-					console.assert(pc.signalingState === 'stable');
-					console.log('[%s] [%s] Local %s has been set', sdpId, pc.signalingState, answer.type);
-					sendServerMessage({ connectionId, sdpId, sdp: answer });
+			answerSet = false;
+			try {
+				if (needsRollback) {
+					await Promise.all([pc.setLocalDescription({ type: 'rollback' }), pc.setRemoteDescription(offer)]);
+				} else {
+					await pc.setRemoteDescription(offer);
+				}
+				console.log('[%s] [%s] Remote %s has been set', sdpId, pc.signalingState, offer.type);
+				answerSet = true;
+				await pc.setLocalDescription();
+				const answer = pc.localDescription;
+				console.assert(pc.signalingState === 'stable');
+				console.assert(answer.type === 'answer');
+				console.log('[%s] [%s] Local %s has been set', sdpId, pc.signalingState, answer.type);
+				sendServerMessage({ connectionId, sdpId, sdp: answer });
+				if (needsNegotiation !== null) {
+					negotiate(needsNegotiation);
+					needsNegotiation = null;
+				} else {
 					negotiating = false;
-				}, e => {
-					console.error(e);
-					pc.close();
-				});
+				}
+			} catch (e) {
+				console.error(e);
+				pc.close();
+			}
 		}
 	}
 
-	function handleRemoteAnswer(answer, sdpId) {
-		console.assert(!polite || !negotiating);
-		console.assert(pc.signalingState === 'have-local-offer', 'Unexpected signaling state %s', pc.signalingState);
+	async function handleRemoteAnswer(answer, sdpId) {
 		console.assert(answer.type === 'answer', 'Unexpected answer type %s', answer.type);
+		console.assert(pc.signalingState === 'have-local-offer', 'Unexpected signaling state %s', pc.signalingState);
+		console.assert(negotiating);
 		ignoring = null;
-		negotiating = false;
 		console.log('[%s] [%s] Setting remote %s', sdpId, pc.signalingState, answer.type);
-		pc.setRemoteDescription(answer)
-			.then(() => {
-				console.assert(answer.type === 'answer');
-				console.assert(pc.signalingState === 'stable');
-				console.log('[%s] [%s] Remote %s has been set', sdpId, pc.signalingState, answer.type);
-			}, e => {
-				console.error(e);
-				pc.close();
-			});
+		try {
+			answerSet = true;
+			await pc.setRemoteDescription(answer);
+			console.log('[%s] [%s] Remote %s has been set', sdpId, pc.signalingState, answer.type);
+			if (pc.signalingState === 'stable') {
+				if (needsNegotiation !== null) {
+					negotiate(needsNegotiation);
+					needsNegotiation = null;
+				} else {
+					negotiating = false;
+				}
+			} else {
+				console.warn('Signaling state is %s after setting remote answer', pc.signalingState);
+				pc.addEventListener('signalingstatechange', function onsignalingstatechange() {
+					pc.removeEventListener('signalingstatechange', onsignalingstatechange);
+					if (pc.signalingState === 'stable') {
+						if (needsNegotiation !== null) {
+							negotiate(needsNegotiation);
+							needsNegotiation = null;
+						} else {
+							negotiating = false;
+						}
+					} else {
+						console.error(`Unexpected state ${pc.signalingState}`);
+						pc.close();
+					}
+				});
+			}
+		} catch (e) {
+			console.error(e);
+			pc.close();
+		}
 	}
 
 	function onmessage({
@@ -486,7 +531,7 @@ function createPeerConnection(offer, sendServerMessage, subscribeServerMessage) 
 
 	return {
 		addTransceiver(track, options) {
-			console.log('Adding %s track', track.kind);
+			console.log('Adding %s track', typeof track === 'string' ? track : track.kind);
 			return pc.addTransceiver(track, options);
 		},
 
@@ -528,8 +573,8 @@ function createPeerConnection(offer, sendServerMessage, subscribeServerMessage) 
 // eslint-disable-next-line no-unused-vars
 function initPeerConnection(
 	offer,
-	setPLaybackVideo,
-	setPLaybackAudio,
+	setPlaybackVideo,
+	setPlaybackAudio,
 	sendServerMessage,
 	subscribeServerMessage,
 	subscribeVideo,
@@ -591,7 +636,7 @@ function initPeerConnection(
 			}
 			videoTransceiver.sender.replaceTrack(null);
 			if (sendVideo) {
-				subscribeAudio(track => {
+				subscribeVideo(track => {
 					if (pendingSendVideo) {
 						videoTransceiver.sender.replaceTrack(track);
 					} else {
