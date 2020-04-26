@@ -8,95 +8,123 @@ global initPlayback,
 */
 
 function initPeerConnection(
-	offer, sendServerMessage, subscribeServerMessage, subscribeVideo, subscribeAudio
+	offer,
+	setPLaybackVideo,
+	setPLaybackAudio,
+	sendServerMessage,
+	subscribeServerMessage,
+	subscribeVideo,
+	subscribeAudio
 ) {
 	const requestSubscribers = new Set();
 	const messageSubscribers = new Set();
-	let videoTransceiver = null;
-	let audioTransceiver = null;
-	let controlChannel = null;
+	let pendingSendVideo = false;
+	let pendingSendAudio = false;
 
 	const {
 		addTransceiver,
 		subscribeTrack,
-		subscribeDataChannel
+		createDataChannel
 	} = createPeerConnection(offer, sendServerMessage, subscribeServerMessage);
 
+	const audioTransceiver = addTransceiver('audio', { direction: 'sendonly' });
+	const videoTransceiver = addTransceiver('video', { direction: 'sendonly' });
+
 	subscribeAudio(track => {
-		if (audioTransceiver) {
-			audioTransceiver.sender.replaceTrack(track);
-		} else {
-			audioTransceiver = addTransceiver(track, { direction: 'sendonly' });
-		}
+		audioTransceiver.sender.replaceTrack(track);
 	});
 
 	subscribeVideo(track => {
-		if (videoTransceiver) {
-			videoTransceiver.sender.replaceTrack(track);
-		} else {
-			videoTransceiver = addTransceiver(track, { direction: 'sendonly' });
-		}
+		videoTransceiver.sender.replaceTrack(track);
 	});
 
 	subscribeTrack(track => {
+		if (track.kind === 'video') {
+			setPlaybackVideo(track);
+		}
+
 		if (track.kind === 'audio') {
 			setPlaybackAudio(track);
 		}
 	});
 
-	subscribeDataChannel(channel => {
-		if (channel.label !== 'control') {
-			// channel.close();
+	const controlChannel = createDataChannel('control', { id: 0, negotiated: true });
+
+	controlChannel.onmessage = ({ data }) => {
+		const message = JSON.parse(data);
+		if ('request' in message) {
+			let sent = false;
+			requestSubscribers.forEach(({ subscriber }) => {
+				subscriber(message.data, data => {
+					if (!sent) {
+						sent = true;
+						controlChannel.send({ response: message.request, data });
+					}
+				});
+			});
 			return;
 		}
 
-		if (controlChannel) {
-			controlChannel.close();
+		if (!('response' in message)) {
+			messageSubscribers.forEach(({ subscriber }) => {
+				subscriber(message.data);
+			});
 		}
-
-		channel.onmessage = ({ data }) => {
-			const message = JSON.parse(data);
-
-			if ('request' in message) {
-				let sent = false;
-				requestSubscribers.forEach(({ subscriber }) => {
-					subscriber(message.data, data => {
-						if (!sent) {
-							sent = true;
-							channel.send(JSON.stringify({
-								response: message.request,
-								data
-							}));
-						}
-					});
-				});
-				return;
-			}
-
-			if (!('response' in message)) {
-				messageSubscribers.forEach(({ subscriber }) => {
-					subscriber(message.data);
-				});
-			}
-		};
-
-		controlChannel = channel;
-	});
+	};
 
 	return {
-		sendRequest(data) {
-			if (!controlChannel) {
-				return Promise.reject(new Error('Control channel is not available'));
+		setSendVideo(sendVideo) {
+			pendingSendVideo = sendVideo;
+			if (videoTransceiver.sender.track) {
+				videoTransceiver.sender.track.stop();
 			}
-
+			videoTransceiver.sender.replaceTrack(null);
+			if (sendVideo) {
+				subscribeAudio(track => {
+					if (pendingSendVideo) {
+						videoTransceiver.sender.replaceTrack(track);
+					} else {
+						track.stop();
+					}
+				});
+			}
+		},
+		setSendAudio(sendAudio) {
+			pendingSendAudio = sendAudio;
+			if (audioTransceiver.sender.track) {
+				audioTransceiver.sender.track.stop();
+			}
+			audioTransceiver.sender.replaceTrack(null);
+			if (sendAudio) {
+				subscribeAudio(track => {
+					if (pendingSendAudio) {
+						audioTransceiver.sender.replaceTrack(track);
+					} else {
+						track.stop();
+					}
+				});
+			}
+		},
+		sendMessage(data) {
+			if (controlChannel.readyState !== 'open') {
+				console.warn('Control channel is not open');
+			} else {
+				controlChannel.send(JSON.stringify({ data }));
+			}
+		},
+		subscribeMessage(subscriber) {
+			const subscriberObject = { subscriber };
+			messageSubscribers.add(subscriberObject);
+			return () => {
+				messageSubscribers.delete(subscriberObject);
+			};
+		},
+		sendRequest(data) {
 			if (controlChannel.readyState !== 'open') {
 				return Promise.reject(new Error('Control channel is not open'));
 			}
-
 			const transaction = Math.random().toString(36).substr(2, 9);
-
 			controlChannel.send(JSON.stringify({ request: transaction, data }));
-
 			return new Promise(resolve => {
 				controlChannel.addEventListener('message', function onmessage({ data }) {
 					const message = JSON.parse(data);
@@ -107,20 +135,11 @@ function initPeerConnection(
 				});
 			});
 		},
-
 		subscribeRequest(subscriber) {
 			const subscriberObject = { subscriber };
 			requestSubscribers.add(subscriberObject);
 			return () => {
 				requestSubscribers.delete(subscriberObject);
-			};
-		},
-
-		subscribeMessage(subscriber) {
-			const subscriberObject = { subscriber };
-			messageSubscribers.add(subscriberObject);
-			return () => {
-				messageSubscribers.delete(subscriberObject);
 			};
 		}
 	};
@@ -135,8 +154,18 @@ function initConnectionListener(
 
 	subscribeServerMessage(({ connectionId, sdp }) => {
 		if (!connectionId && sdp && sdp.type === 'offer') {
-			const { sendRequest, subscribeRequest, subscribeMessage } = initPeerConnection(
-				sdp, sendServerMessage, subscribeServerMessage, subscribeVideo, subscribeAudio
+			const {
+				sendRequest,
+				subscribeRequest,
+				subscribeMessage
+			} = initPeerConnection(
+				sdp,
+				setPlaybackVideo,
+				setPlaybackAudio,
+				sendServerMessage,
+				subscribeServerMessage,
+				subscribeVideo,
+				subscribeAudio
 			);
 
 			requestSenders.add(sendRequest);

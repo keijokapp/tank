@@ -7,19 +7,27 @@ global initPlayback
 */
 
 function initPeerConnection(
-	sendServerMessage, subscribeServerMessage, subscribeAudio
+	offer,
+	setPLaybackVideo,
+	setPLaybackAudio,
+	sendServerMessage,
+	subscribeServerMessage,
+	subscribeVideo,
+	subscribeAudio
 ) {
 	const requestSubscribers = new Set();
 	const messageSubscribers = new Set();
+	let pendingSendVideo = false;
 	let pendingSendAudio = false;
 
 	const {
 		addTransceiver,
 		subscribeTrack,
 		createDataChannel
-	} = createPeerConnection(null, sendServerMessage, subscribeServerMessage);
+	} = createPeerConnection(offer, sendServerMessage, subscribeServerMessage);
 
 	const audioTransceiver = addTransceiver('audio', { direction: 'sendonly' });
+	const videoTransceiver = addTransceiver('video', { direction: 'sendonly' });
 
 	subscribeTrack(track => {
 		if (track.kind === 'video') {
@@ -31,7 +39,7 @@ function initPeerConnection(
 		}
 	});
 
-	const controlChannel = createDataChannel('control');
+	const controlChannel = createDataChannel('control', { id: 0, negotiated: true });
 
 	controlChannel.onmessage = ({ data }) => {
 		const message = JSON.parse(data);
@@ -55,9 +63,23 @@ function initPeerConnection(
 		}
 	};
 
-	window.createDataChannel = createDataChannel;
-
 	return {
+		setSendVideo(sendVideo) {
+			pendingSendVideo = sendVideo;
+			if (videoTransceiver.sender.track) {
+				videoTransceiver.sender.track.stop();
+			}
+			videoTransceiver.sender.replaceTrack(null);
+			if (sendVideo) {
+				subscribeAudio(track => {
+					if (pendingSendVideo) {
+						videoTransceiver.sender.replaceTrack(track);
+					} else {
+						track.stop();
+					}
+				});
+			}
+		},
 		setSendAudio(sendAudio) {
 			pendingSendAudio = sendAudio;
 			if (audioTransceiver.sender.track) {
@@ -77,20 +99,23 @@ function initPeerConnection(
 		sendMessage(data) {
 			if (controlChannel.readyState !== 'open') {
 				console.warn('Control channel is not open');
-				return;
+			} else {
+				controlChannel.send(JSON.stringify({ data }));
 			}
-
-			controlChannel.send(JSON.stringify({ data }));
+		},
+		subscribeMessage(subscriber) {
+			const subscriberObject = { subscriber };
+			messageSubscribers.add(subscriberObject);
+			return () => {
+				messageSubscribers.delete(subscriberObject);
+			};
 		},
 		sendRequest(data) {
 			if (controlChannel.readyState !== 'open') {
 				return Promise.reject(new Error('Control channel is not open'));
 			}
-
 			const transaction = Math.random().toString(36).substr(2, 9);
-
 			controlChannel.send(JSON.stringify({ request: transaction, data }));
-
 			return new Promise(resolve => {
 				controlChannel.addEventListener('message', function onmessage({ data }) {
 					const message = JSON.parse(data);
@@ -129,7 +154,12 @@ function initConnection(subscribePeer, sendServerMessage, subscribeServerMessage
 		unsubscribe();
 
 		const connection = initPeerConnection(
-			sendServerMessage, subscribeServerMessage, subscribeAudio
+			null,
+			setPlaybackVideo,
+			setPlaybackAudio,
+			sendServerMessage,
+			subscribeServerMessage,
+			subscribeAudio
 		);
 		setSendAudio = connection.setSendAudio;
 		sendMessage = connection.sendMessage;

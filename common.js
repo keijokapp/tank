@@ -61,9 +61,9 @@ function initVideoCapture() {
 
 		track = null;
 
-		navigator.mediaDevices.getUserMedia({ video: { facingMode } })
+		navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: true })
 			.then(stream => {
-				const streamTracks = stream.getTracks();
+				const streamTracks = stream.getVideoTracks();
 
 				if (facingMode !== pendingFacingMode) {
 					streamTracks.forEach(track => {
@@ -304,7 +304,6 @@ function initServerConnection() {
 	};
 }
 
-// eslint-disable-next-line no-unused-vars
 function createPeerConnection(offer, sendServerMessage, subscribeServerMessage) {
 	let offerIndex = offer ? 1 : 0; // debug only
 
@@ -521,6 +520,137 @@ function createPeerConnection(offer, sendServerMessage, subscribeServerMessage) 
 			dataChannelSubscribers.add(subscriberObject);
 			return () => {
 				dataChannelSubscribers.delete(subscriberObject);
+			};
+		}
+	};
+}
+
+// eslint-disable-next-line no-unused-vars
+function initPeerConnection(
+	offer,
+	setPLaybackVideo,
+	setPLaybackAudio,
+	sendServerMessage,
+	subscribeServerMessage,
+	subscribeVideo,
+	subscribeAudio
+) {
+	const requestSubscribers = new Set();
+	const messageSubscribers = new Set();
+	let pendingSendVideo = false;
+	let pendingSendAudio = false;
+
+	const {
+		addTransceiver,
+		subscribeTrack,
+		createDataChannel
+	} = createPeerConnection(offer, sendServerMessage, subscribeServerMessage);
+
+	const audioTransceiver = addTransceiver('audio', { direction: 'sendonly' });
+	const videoTransceiver = addTransceiver('video', { direction: 'sendonly' });
+
+	subscribeTrack(track => {
+		if (track.kind === 'video') {
+			setPlaybackVideo(track);
+		}
+
+		if (track.kind === 'audio') {
+			setPlaybackAudio(track);
+		}
+	});
+
+	const controlChannel = createDataChannel('control', { id: 0, negotiated: true });
+
+	controlChannel.onmessage = ({ data }) => {
+		const message = JSON.parse(data);
+		if ('request' in message) {
+			let sent = false;
+			requestSubscribers.forEach(({ subscriber }) => {
+				subscriber(message.data, data => {
+					if (!sent) {
+						sent = true;
+						controlChannel.send(JSON.stringify({ response: message.request, data }));
+					}
+				});
+			});
+			return;
+		}
+
+		if (!('response' in message)) {
+			messageSubscribers.forEach(({ subscriber }) => {
+				subscriber(message.data);
+			});
+		}
+	};
+
+	return {
+		setSendVideo(sendVideo) {
+			pendingSendVideo = sendVideo;
+			if (videoTransceiver.sender.track) {
+				videoTransceiver.sender.track.stop();
+			}
+			videoTransceiver.sender.replaceTrack(null);
+			if (sendVideo) {
+				subscribeAudio(track => {
+					if (pendingSendVideo) {
+						videoTransceiver.sender.replaceTrack(track);
+					} else {
+						track.stop();
+					}
+				});
+			}
+		},
+		setSendAudio(sendAudio) {
+			pendingSendAudio = sendAudio;
+			if (audioTransceiver.sender.track) {
+				audioTransceiver.sender.track.stop();
+			}
+			audioTransceiver.sender.replaceTrack(null);
+			if (sendAudio) {
+				subscribeAudio(track => {
+					if (pendingSendAudio) {
+						audioTransceiver.sender.replaceTrack(track);
+					} else {
+						track.stop();
+					}
+				});
+			}
+		},
+		sendMessage(data) {
+			if (controlChannel.readyState !== 'open') {
+				console.warn('Control channel is not open');
+			} else {
+				controlChannel.send(JSON.stringify({ data }));
+			}
+		},
+		subscribeMessage(subscriber) {
+			const subscriberObject = { subscriber };
+			messageSubscribers.add(subscriberObject);
+			return () => {
+				messageSubscribers.delete(subscriberObject);
+			};
+		},
+		sendRequest(data) {
+			if (controlChannel.readyState !== 'open') {
+				return Promise.reject(new Error('Control channel is not open'));
+			}
+			const transaction = Math.random().toString(36).substr(2, 9);
+			controlChannel.send(JSON.stringify({ request: transaction, data }));
+			return new Promise(resolve => {
+				controlChannel.addEventListener('message', function onmessage({ data }) {
+					const message = JSON.parse(data);
+					if (message.response === transaction) {
+						controlChannel.removeEventListener('message', onmessage);
+						resolve(message.data);
+					}
+				});
+			});
+		},
+		subscribeRequest(subscriber) {
+			const subscriberObject = { subscriber };
+			requestSubscribers.add(subscriberObject);
+			return () => {
+				requestSubscribers.delete(subscriberObject);
 			};
 		}
 	};
