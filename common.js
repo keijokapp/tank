@@ -36,6 +36,7 @@ function initPlayback() {
 function initVideoCapture() {
 	const subscribers = new Set();
 	const tracks = new Set();
+	let setFlashLightTimeout = false;
 	let pendingFlashLight = false;
 	let pendingFacingMode = 'environment';
 	let track;
@@ -61,8 +62,13 @@ function initVideoCapture() {
 
 		track = null;
 
-		navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: true })
-			.then(stream => {
+		if (setFlashLightTimeout !== null) {
+			clearTimeout(setFlashLightTimeout);
+			setFlashLightTimeout = null;
+		}
+
+		navigator.mediaDevices.getUserMedia({ video: { facingMode } })
+			.then(async stream => {
 				const streamTracks = stream.getVideoTracks();
 
 				if (facingMode !== pendingFacingMode) {
@@ -79,8 +85,10 @@ function initVideoCapture() {
 				}
 
 				[track] = streamTracks;
-
-				setFlashLight();
+				setFlashLightTimeout = setTimeout(() => {
+					setFlashLight();
+					setFlashLightTimeout = null;
+				}, 500);
 
 				subscribers.forEach(({ subscriber }) => {
 					subscriber(cloneTrack(track));
@@ -98,7 +106,7 @@ function initVideoCapture() {
 	return {
 		setFlashLight(flashLight) {
 			pendingFlashLight = flashLight;
-			if (track !== null && track !== undefined) {
+			if (track !== null && track !== undefined && setFlashLightTimeout === null) {
 				setFlashLight();
 			}
 		},
