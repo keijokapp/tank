@@ -35,7 +35,6 @@ function initPlayback() {
 // eslint-disable-next-line no-unused-vars
 function initVideoCapture() {
 	const subscribers = new Set();
-	const tracks = new Set();
 	let setFlashLightTimeout = false;
 	let pendingFlashLight = false;
 	let pendingFacingMode = 'environment';
@@ -54,10 +53,6 @@ function initVideoCapture() {
 	function start(facingMode) {
 		if (track) {
 			track.stop();
-			tracks.forEach(track => {
-				track.stop();
-				track.dispatchEvent(new Event('ended'));
-			});
 		}
 
 		track = null;
@@ -91,16 +86,9 @@ function initVideoCapture() {
 				}, 500);
 
 				subscribers.forEach(({ subscriber }) => {
-					subscriber(cloneTrack(track));
+					subscriber(track);
 				});
 			});
-	}
-
-	function cloneTrack(track) {
-		const clonedTrack = track.clone();
-		clonedTrack.addEventListener('ended', () => { tracks.delete(clonedTrack); });
-		tracks.add(clonedTrack);
-		return clonedTrack;
 	}
 
 	return {
@@ -125,7 +113,7 @@ function initVideoCapture() {
 			if (track) {
 				Promise.resolve().then(() => {
 					if (track && subscribers.has(subscriberObject)) {
-						subscriber(cloneTrack(track));
+						subscriber(track);
 					}
 				});
 			} else if (track === undefined) {
