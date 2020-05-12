@@ -1,5 +1,4 @@
-exports.loom = koer => kass => () => {
-	console.log(koer, kass);
-	console.log(koer())
+exports.loom = koer => kass => sitt => sitahäda => () => {
+	console.log(koer, kass, sitt, sitahäda);
 	return 4;
 };

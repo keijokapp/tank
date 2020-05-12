@@ -101,7 +101,7 @@ exports.setFacingMode = facingMode => () => {
 	}
 };
 
-exports.subscribeVideoTrack = subscriber => () => {
+exports.subscribeVideo = subscriber => () => {
 	const subscriberObject = { subscriber };
 	videoSubscribers.add(subscriberObject);
 
@@ -120,7 +120,7 @@ exports.subscribeVideoTrack = subscriber => () => {
 	};
 };
 
-exports.subscribeAudioTrack = subscriber => () => {
+exports.subscribeAudio = subscriber => () => {
 	const subscriberObject = { subscriber };
 	videoSubscribers.add(subscriberObject);
 

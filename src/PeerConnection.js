@@ -2,6 +2,9 @@ function createPeerConnection(offer, sendSdp, sendIce, subscribeSdp, subscribeIc
 	// This function looks disasterous because Chromiums's implementation of WebRTC is disaster
 	// More information: https://bugs.chromium.org/p/chromium/issues/detail?id=980872 and issues it's being blocked on
 
+	const videoTrackSubscribers = new Set();
+	const audioTrackSubscribers = new Set();
+	const closeSubscribers = new Set();
 	let offerIndex = offer ? 1 : 0; // debug only
 	let negotiating = false;
 	let ignoring = null; // latest incoming offer being ignored
@@ -25,6 +28,9 @@ function createPeerConnection(offer, sendSdp, sendIce, subscribeSdp, subscribeIc
 		if (pc.connectionState === 'closed') {
 			unsubscribeSdp();
 			unsubscribeIce();
+			videoTrackSubscribers.clear();
+			audioTrackSubscribers.clear();
+			closeSubscribers.clear();
 		}
 	});
 
@@ -34,6 +40,27 @@ function createPeerConnection(offer, sendSdp, sendIce, subscribeSdp, subscribeIc
 
 	pc.addEventListener('iceconnectionstatechange', () => {
 		console.log('ICE connection state: %s', pc.iceConnectionState);
+	});
+
+	pc.addEventListener('track', ({ track }) => {
+		console.log('Got %s track', track.kind);
+		track.addEventListener('ended', () => {
+			console.log('%s track has been ended', track.kind);
+		});
+
+		if (track.kind === 'video') {
+			videoTrackSubscribers.forEach(({ subscriber }) => {
+				subscriber(track.clone());
+			});
+		}
+
+		if (track.kind === 'audio') {
+			audioTrackSubscribers.forEach(({ subscriber }) => {
+				subscriber(track.clone());
+			});
+		}
+
+		track.stop();
 	});
 
 	pc.addEventListener('icecandidate', ({ candidate }) => {
@@ -181,181 +208,85 @@ function createPeerConnection(offer, sendSdp, sendIce, subscribeSdp, subscribeIc
 		handleRemoteOffer(offer, 0);
 	}
 
-	const addVideoTransceiver = track => options => () => {
-		console.log('Adding video track');
-		console.log(options);
-		if (track.constructor.name === 'Nothing') {
-			return pc.addTransceiver('video', options);
-		}
-
-		return pc.addTransceiver(track.value0, options);
-	};
-
-	const addAudioTransceiver = track => options => () => {
-		console.log('Adding audio track');
-		console.log(options);
-		if (track.constructor.name === 'Nothing') {
-			return pc.addTransceiver('audio', options);
-		}
-
-		return pc.addTransceiver(track.value0, options);
-	};
-
-	const createDataChannel = label => options => () => {
-		console.log('Creating data channel: %s', label);
-		const channel = pc.createDataChannel(label, options);
-		channel.addEventListener('open', () => {
-			console.log('Data channel %s is open', channel.label);
-		});
-		channel.addEventListener('closing', () => {
-			console.log('Data channel %s is closing', channel.label);
-		});
-		channel.addEventListener('close', () => {
-			console.log('Data channel %s is closed', channel.label);
-		});
-		return channel;
-	};
-
 	return {
-		addVideoTransceiver,
-		addAudioTransceiver,
-		createDataChannel
+		addVideoTransceiver(track, options) {
+			console.log('Adding video track');
+			return pc.addTransceiver(track || 'video', options);
+		},
+
+		addAudioTransceiver(track, options) {
+			console.log('Adding audio track');
+			return pc.addTransceiver(track || 'audio', options);
+		},
+
+		subscribeVideoTrack(subscriber) {
+			const subscriberObject = { subscriber };
+			videoTrackSubscribers.add(subscriberObject);
+			return () => {
+				videoTrackSubscribers.delete(subscriberObject);
+			};
+		},
+
+		subscribeAudioTrack(subscriber) {
+			const subscriberObject = { subscriber };
+			audioTrackSubscribers.add(subscriberObject);
+			return () => {
+				audioTrackSubscribers.delete(subscriberObject);
+			};
+		},
+
+		subscribeClose(subscriber) {
+			const subscriberObject = { subscriber };
+			closeSubscribers.add(subscriberObject);
+			return () => {
+				closeSubscribers.delete(subscriberObject);
+			};
+		},
+
+		createDataChannel(label, options) {
+			console.log('Creating data channel: %s', label);
+			const channel = pc.createDataChannel(label, options);
+			channel.addEventListener('open', () => {
+				console.log('Data channel %s is open', channel.label);
+			});
+			channel.addEventListener('closing', () => {
+				console.log('Data channel %s is closing', channel.label);
+			});
+			channel.addEventListener('close', () => {
+				console.log('Data channel %s is closed', channel.label);
+			});
+			return channel;
+		}
 	};
 }
 
 // eslint-disable-next-line max-len
 exports.createPeerConnection = offer => sendSdp => sendIce => subscribeSdp => subscribeIce => {
-	return createPeerConnection(offer.constructor.name === 'Nothing' ? null : offer.value0, sendSdp, sendIce, subscribeSdp, subscribeIce);
+	return createPeerConnection(
+		offer.value0,
+		sdp => sendSdp(sdp)(),
+		ice => sendIce(ice)(),
+		subscriber => subscribeSdp(sdp => () => subscriber(sdp))(),
+		subscriber => subscribeIce(ice => () => subscriber(ice))()
+	);
 };
 
-// eslint-disable-next-line no-unused-vars
-function initPeerConnection(
-	peerId,
-	offer,
-	setPlaybackVideo,
-	setPlaybackAudio,
-	sendServerMessage,
-	subscribeServerMessage,
-	subscribeVideo,
-	subscribeAudio
-) {subscribeServerMessage
-	const requestSubscribers = new Set();
-	const messageSubscribers = new Set();
-	let pendingSendVideo = false;
-	let pendingSendAudio = false;
-
-	const {
-		addTransceiver,
-		subscribeTrack,
-		createDataChannel
-	} = createPeerConnection(offer, sendServerMessage, subscribeServerMessage);
-
-	const audioTransceiver = addTransceiver('audio', { direction: 'sendrecv' });
-	const videoTransceiver = addTransceiver('video', { direction: 'sendrecv' });
-
-	subscribeTrack(track => {
-		if (track.kind === 'video') {
-			setPlaybackVideo(track);
-		}
-
-		if (track.kind === 'audio') {
-			setPlaybackAudio(track);
-		}
-	});
-
-	const controlChannel = createDataChannel('control', { id: 0, negotiated: true });
-
-	controlChannel.onmessage = ({ data }) => {
-		const message = JSON.parse(data);
-		if ('request' in message) {
-			let sent = false;
-			requestSubscribers.forEach(({ subscriber }) => {
-				subscriber(message.data, data => {
-					if (!sent) {
-						sent = true;
-						controlChannel.send(JSON.stringify({ response: message.request, data }));
-					}
-				});
-			});
-			return;
-		}
-
-		if (!('response' in message)) {
-			messageSubscribers.forEach(({ subscriber }) => {
-				subscriber(message.data);
-			});
-		}
-	};
-
-	return {
-		setSendVideo(sendVideo) {
-			pendingSendVideo = sendVideo;
-			if (videoTransceiver.sender.track) {
-				videoTransceiver.sender.track.stop();
-			}
-			videoTransceiver.sender.replaceTrack(null);
-			if (sendVideo) {
-				subscribeVideo(track => {
-					if (pendingSendVideo) {
-						videoTransceiver.sender.replaceTrack(track);
-					} else {
-						track.stop();
-					}
-				});
-			}
-		},
-		setSendAudio(sendAudio) {
-			pendingSendAudio = sendAudio;
-			if (audioTransceiver.sender.track) {
-				audioTransceiver.sender.track.stop();
-			}
-			audioTransceiver.sender.replaceTrack(null);
-			if (sendAudio) {
-				subscribeAudio(track => {
-					if (pendingSendAudio) {
-						audioTransceiver.sender.replaceTrack(track);
-					} else {
-						track.stop();
-					}
-				});
-			}
-		},
-		sendMessage(data) {
-			if (controlChannel.readyState !== 'open') {
-				console.warn('Control channel is not open');
-			} else {
-				controlChannel.send(JSON.stringify({ data }));
-			}
-		},
-		subscribeMessage(subscriber) {
-			const subscriberObject = { subscriber };
-			messageSubscribers.add(subscriberObject);
-			return () => {
-				messageSubscribers.delete(subscriberObject);
-			};
-		},
-		sendRequest(data) {
-			if (controlChannel.readyState !== 'open') {
-				return Promise.reject(new Error('Control channel is not open'));
-			}
-			const transaction = Math.random().toString(36).substr(2, 9);
-			controlChannel.send(JSON.stringify({ request: transaction, data }));
-			return new Promise(resolve => {
-				controlChannel.addEventListener('message', function onmessage({ data }) {
-					const message = JSON.parse(data);
-					if (message.response === transaction) {
-						controlChannel.removeEventListener('message', onmessage);
-						resolve(message.data);
-					}
-				});
-			});
-		},
-		subscribeRequest(subscriber) {
-			const subscriberObject = { subscriber };
-			requestSubscribers.add(subscriberObject);
-			return () => {
-				requestSubscribers.delete(subscriberObject);
-			};
-		}
-	};
-}
+// eslint-disable-next-line max-len
+exports.addVideoTransceiver = pc => track => ({ direction }) => () => pc.addVideoTransceiver(track.value0, { direction: direction.toLowerCase() });
+// eslint-disable-next-line max-len
+exports.addAudioTransceiver = pc => track => ({ direction }) => () => pc.addAudioTransceiver(track.value0, { direction: direction.toLowerCase() });
+// eslint-disable-next-line max-len
+exports.subscribeVideoTrack = pc => subscriber => () => pc.subscribeVideoTrack(track => subscriber(track)());
+// eslint-disable-next-line max-len
+exports.subscribeAudioTrack = pc => subscriber => () => pc.subscribeAudioTrack(track => subscriber(track)());
+exports.subscribeClose = pc => subscriber => () => pc.subscribeClose(() => subscriber()())
+exports.createDataChannel = pc => label => ({
+	ordered, maxPacketLifeTime, maxRetransmits, protocol, negotiated, id
+}) => () => pc.createDataChannel(label, {
+	ordered,
+	maxPacketLifeTime: maxPacketLifeTime.value0,
+	maxRetransmits: maxRetransmits.value0,
+	protocol,
+	negotiated,
+	id: id.value0
+});

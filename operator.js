@@ -73,9 +73,10 @@ function initConnection(
 			const subscriberObject = { subscriber };
 			pendingRequestSubscribers.add(subscriberObject);
 			return () => {
-				if (subscribeRequest) {
-					const unsubscribe = unsubscribeRequest.get(subscriberObject);
+				const unsubscribe = unsubscribeRequest.get(subscriberObject);
+				if (unsubscribe) {
 					unsubscribe();
+					unsubscribeRequest.delete(subscriberObject);
 				} else {
 					pendingRequestSubscribers.delete(subscriberObject);
 				}

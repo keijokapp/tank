@@ -1,8 +1,9 @@
 module Signaling (
-  PeerType,
+  PeerType(Operator, Tank),
   PeerId,
   SDP,
   ICE,
+  peerId,
   sendSdp,
   sendIce,
   subscribeSdp,
@@ -23,28 +24,30 @@ foreign import sendSdp :: PeerId -> PeerId -> SDP -> Effect Unit
 foreign import sendIce :: PeerId -> PeerId -> ICE -> Effect Unit
 foreign import subscribeSdpImpl :: (String -> PeerId)
                                 -> PeerId
-                                -> (PeerId -> SDP -> Effect Unit)
-                                -> Effect Unit
+                                -> PeerId
+                                -> (SDP -> Effect Unit)
+                                -> Effect (Effect Unit)
 foreign import subscribeIceImpl :: (String -> PeerId)
                                 -> PeerId
-                                -> (PeerId -> ICE -> Effect Unit)
-                                -> Effect Unit
+                                -> PeerId
+                                -> (ICE -> Effect Unit)
+                                -> Effect (Effect Unit)
 foreign import subscribePeerImpl :: PeerType
                                  -> PeerType
                                  -> (String -> PeerId)
                                  -> PeerType
                                  -> PeerId
                                  -> (PeerType -> PeerId -> Effect Unit)
-                                 -> Effect Unit
+                                 -> Effect (Effect Unit)
 foreign import peerIdImpl :: (String -> PeerId) -> PeerType -> PeerId
 
-subscribeSdp :: PeerId -> (PeerId -> SDP -> Effect Unit) -> Effect Unit
+subscribeSdp :: PeerId -> PeerId -> (SDP -> Effect Unit) -> Effect (Effect Unit)
 subscribeSdp = subscribeSdpImpl PeerId
 
-subscribeIce :: PeerId -> (PeerId -> SDP -> Effect Unit) -> Effect Unit
-subscribeIce = subscribeSdpImpl PeerId
+subscribeIce :: PeerId -> PeerId -> (ICE -> Effect Unit) -> Effect (Effect Unit)
+subscribeIce = subscribeIceImpl PeerId
 
-subscribePeer :: PeerType -> PeerId -> (PeerType -> PeerId -> Effect Unit) -> Effect Unit
+subscribePeer :: PeerType -> PeerId -> (PeerType -> PeerId -> Effect Unit) -> Effect (Effect Unit)
 subscribePeer = subscribePeerImpl Operator Tank PeerId
 
 peerId :: PeerType -> PeerId

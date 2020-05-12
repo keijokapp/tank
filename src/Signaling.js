@@ -52,9 +52,6 @@ function create() {
 
 		if ('type' in message) {
 			peerSubscribers.forEach(({
-				operatorConstructor,
-				tankConstructor,
-				peerIdConstructor,
 				peerType,
 				peerId,
 				knownPeers,
@@ -64,14 +61,13 @@ function create() {
 					client.send(JSON.stringify({
 						source: peerId.value0,
 						destination: message.source,
-						type: peerType.constructor.name === 'Tank' ? 'tank' : 'operator'
+						type: peerType
 					}));
 				}
 
 				if (!knownPeers.has(peerId) && (!('destination' in message) || message.destination === peerId)) {
 					try {
-						const type = message.type === 'tank' ? tankConstructor : operatorConstructor;
-						subscriber(type, peerIdConstructor(message.source));
+						subscriber(message.type, message.source);
 					} catch (e) {
 						console.error(e);
 					}
@@ -80,24 +76,20 @@ function create() {
 		}
 
 		if (typeof message.destination === 'string') {
-			sdpSubscribers.forEach(({
-				peerIdConstructor, sdpConstructor, peerId, subscriber
-			}) => {
-				if (message.destination === peerId.value0 && 'sdp' in message) {
+			sdpSubscribers.forEach(({ localPeer, remotePeer, subscriber }) => {
+				if (message.destination === localPeer && message.source === remotePeer && 'sdp' in message) {
 					try {
-						subscriber(peerIdConstructor(peerId), sdpConstructor(message.sdp));
+						subscriber(message.sdp);
 					} catch (e) {
 						console.error(e);
 					}
 				}
 			});
 
-			iceSubscribers.forEach(({
-				peerIdConstructor, iceConstructor, peerId, subscriber
-			}) => {
-				if (message.destination === peerId.value0 && 'ice' in message) {
+			iceSubscribers.forEach(({ localPeer, remotePeer, subscriber }) => {
+				if (message.destination === localPeer && message.source === remotePeer && 'ice' in message) {
 					try {
-						subscriber(peerIdConstructor(peerId), iceConstructor(message.ice));
+						subscriber(message.ice);
 					} catch (e) {
 						console.error(e);
 					}
@@ -112,13 +104,10 @@ create();
 // eslint-disable-next-line max-len
 exports.subscribePeerImpl = operatorConstructor => tankConstructor => peerIdConstructor => peerType => peerId => subscriber => () => {
 	const subscriberWrap = {
-		operatorConstructor,
-		tankConstructor,
-		peerIdConstructor,
-		peerType: peerType.constructor.name === 'Tank' ? 'operator' : 'tank',
+		peerType: peerType.constructor.name === 'Tank' ? 'tank' : 'operator',
 		peerId: peerId.value0,
 		knownPeers: new Set(),
-		subscriber
+		subscriber: (peerType, peerId) => subscriber(peerType === 'tank' ? tankConstructor : operatorConstructor, peerIdConstructor(peerId))
 	};
 
 	peerSubscribers.add(subscriberWrap);
@@ -127,12 +116,11 @@ exports.subscribePeerImpl = operatorConstructor => tankConstructor => peerIdCons
 	};
 };
 
-exports.subscribeSdpImpl = peerIdConstructor => sdpConstructor => peerId => subscriber => () => {
+exports.subscribeSdpImpl = sdpConstructor => remotePeer => localPeer => subscriber => () => {
 	const subscriberWrap = {
-		peerIdConstructor,
-		sdpConstructor,
-		peerId,
-		subscriber
+		localPeer: localPeer.value0,
+		remotePeer: remotePeer.value0,
+		subscriber: sdp => subscriber(sdpConstructor(sdp))
 	};
 
 	sdpSubscribers.add(subscriberWrap);
@@ -141,12 +129,11 @@ exports.subscribeSdpImpl = peerIdConstructor => sdpConstructor => peerId => subs
 	};
 };
 
-exports.subscribeIceImpl = peerIdConstructor => iceConstructor => peerId => subscriber => () => {
+exports.subscribeIceImpl = iceConstructor => remotePeer => localPeer => subscriber => () => {
 	const subscriberWrap = {
-		peerIdConstructor,
-		iceConstructor,
-		peerId,
-		subscriber
+		localPeer: localPeer.value0,
+		remotePeer: remotePeer.value0,
+		subscriber: ice => subscriber(iceConstructor(ice))
 	};
 
 	iceSubscribers.add(subscriberWrap);

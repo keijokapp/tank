@@ -412,8 +412,6 @@ function createPeerConnection(offer, sendServerMessage, subscribeServerMessage) 
 		}
 	}
 
-	window.negotiate = negotiate;
-
 	async function handleRemoteOffer(offer, sdpId) {
 		console.assert(offer.type === 'offer', 'Unexpected offer type %s', offer.type);
 		if (!polite && negotiating) {
@@ -517,6 +515,8 @@ function createPeerConnection(offer, sendServerMessage, subscribeServerMessage) 
 		}
 	}
 
+	window.pc = pc;
+
 	const unsubscribe = subscribeServerMessage(onmessage);
 
 	if (offer) {
@@ -587,8 +587,8 @@ function initPeerConnection(
 		createDataChannel
 	} = createPeerConnection(offer, sendServerMessage, subscribeServerMessage);
 
-	const audioTransceiver = addTransceiver('audio', { direction: 'sendonly' });
-	const videoTransceiver = addTransceiver('video', { direction: 'sendonly' });
+	const audioTransceiver = addTransceiver('audio', { direction: 'sendrecv' });
+	const videoTransceiver = addTransceiver('video', { direction: 'sendrecv' });
 
 	subscribeTrack(track => {
 		if (track.kind === 'video') {
