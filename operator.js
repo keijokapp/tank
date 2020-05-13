@@ -88,7 +88,6 @@ function initConnection(
 // init
 
 function initControls(sendMessage) {
-	const syncHandlers = {};
 	const nextCommand = {};
 	let controlsSendTimeout;
 	let needsSend = false;
@@ -116,19 +115,13 @@ function initControls(sendMessage) {
 		return value => {
 			if (value === undefined) {
 				delete nextCommand[control];
-				return;
-			}
+			} else {
+				nextCommand[control] = value;
 
-			if (control in syncHandlers) {
-				syncHandlers[control].reject(new Error('Value overridden'));
-				delete syncHandlers[control];
-			}
-
-			nextCommand[control] = value;
-
-			if (!needsSend) {
-				needsSend = true;
-				Promise.resolve().then(sendControls);
+				if (!needsSend) {
+					needsSend = true;
+					Promise.resolve().then(sendControls);
+				}
 			}
 		};
 	};
@@ -602,6 +595,8 @@ const {
 } = initConnection(
 	subscribePeer, sendServerMessage, subscribeServerMessage, subscribeAudio
 );
+
+
 const getControl = initControls(sendMessage);
 const getSwitch = initSwitches(sendRequest, subscribeRequest);
 const setJoystick = initJoystick(getControl);
