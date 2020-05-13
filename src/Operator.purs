@@ -37,6 +37,14 @@ main = do
   setControl <- initControls (sendMessage peer)
   pure unit
 
+
+
+
+
+
+
+
+
 initControls :: (FO.Object Number -> Effect Unit) -> Effect (String -> Maybe Number -> Effect Unit)
 initControls sendMessage' = do
   timeoutRef <- Ref.new Nothing
@@ -63,6 +71,20 @@ initControls sendMessage' = do
           sendControls timeoutRef nextCommandRef
     setControl _ nextCommandRef _ control Nothing =
       Ref.modify_ (FO.delete control) nextCommandRef
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 sendMessage :: PendingPeer -> FO.Object Number -> Effect Unit
 sendMessage (PendingPeer pendingPeer) message =
