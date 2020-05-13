@@ -11,7 +11,7 @@ import Effect.Exception (Error)
 import Effect.Ref as Ref
 import Effect.Console (warn)
 import Effect.Promise (class Deferred, Promise, runPromise, promise)
-import Effect.Timer (clearTimeout)
+import Effect.Timer (setTimeout, clearTimeout)
 import Foreign.Object as FO
 import Track (VideoTrack)
 import PeerConnection (createPeerConnection)
@@ -22,13 +22,6 @@ import Playback (setPlaybackVideo, setPlaybackAudio)
 import Capture (subscribeAudio)
 import Util (nextTick)
 
-{-type PendingPeer = {
-  peer :: Maybe Peer,
-  requestSubscribers :: Map.Map Int (Tuple RequestCallback (Ref.Ref (Maybe (Effect Unit)))),
-  sendAudio :: Boolean,
-  subscriberId :: Int
-}-}
-
 newtype PendingPeer = PendingPeer (Ref.Ref (Either { requestSubscribers :: Map.Map Int RequestCallback, sendAudio :: Boolean, subscriberId :: Int } { requestSubscribers :: Map.Map Int (Effect Unit), peer :: Peer }))
 
 main :: Effect Unit
@@ -36,14 +29,6 @@ main = do
   peer <- initPendingPeer
   setControl <- initControls (sendMessage peer)
   pure unit
-
-
-
-
-
-
-
-
 
 initControls :: (FO.Object Number -> Effect Unit) -> Effect (String -> Maybe Number -> Effect Unit)
 initControls sendMessage' = do
@@ -60,7 +45,10 @@ initControls sendMessage' = do
           Ref.write Nothing timeoutRef
         Nothing -> pure unit
       nextCommand <- Ref.read nextCommandRef
-      unless (FO.isEmpty nextCommand) (sendMessage' nextCommand)
+      unless (FO.isEmpty nextCommand) do
+        sendMessage' nextCommand
+        timeoutId <- setTimeout 400 (sendControls timeoutRef nextCommandRef)
+        Ref.write (Just timeoutId) timeoutRef
     setControl timeoutRef nextCommandRef needsSendRef control (Just value) = do
       Ref.modify_ (FO.insert control value) nextCommandRef
       needsSend <- Ref.read needsSendRef
@@ -71,20 +59,6 @@ initControls sendMessage' = do
           sendControls timeoutRef nextCommandRef
     setControl _ nextCommandRef _ control Nothing =
       Ref.modify_ (FO.delete control) nextCommandRef
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 sendMessage :: PendingPeer -> FO.Object Number -> Effect Unit
 sendMessage (PendingPeer pendingPeer) message =
