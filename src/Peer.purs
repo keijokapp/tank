@@ -2,12 +2,13 @@ module Peer where
 
 import Prelude (Unit)
 import Effect (Effect)
-import Effect.Promise (Promise)
+import Effect.Promise (Promise, class Deferred)
+import Data.Argonaut.Core (Json)
 import Track (VideoTrack, AudioTrack)
 import PeerConnection (PeerConnection)
 
-type RequestCallback = forall a. a -> forall b. b -> Effect Unit -> Effect Unit
-type MessageCallback = forall a. (a -> Effect Unit)
+type RequestCallback = Json -> (Json -> Effect Unit) -> Effect Unit
+type MessageCallback = Json -> Effect Unit
 
 foreign import data Peer :: Type
 
@@ -19,7 +20,7 @@ foreign import createPeer :: PeerConnection
                           -> Effect Peer
 foreign import setSendVideo :: Peer -> Boolean -> Effect Unit
 foreign import setSendAudio :: Peer -> Boolean -> Effect Unit
-foreign import sendMessage :: forall a. Peer -> a -> Effect Unit
+foreign import sendMessage :: Peer -> Json -> Effect Unit
 foreign import subscribeMessage :: Peer -> MessageCallback -> Effect (Effect Unit)
-foreign import sendRequest :: forall a b. Peer -> a -> Effect (Promise b)
+foreign import sendRequest :: Deferred => Peer -> Json -> Promise Json
 foreign import subscribeRequest :: Peer -> RequestCallback -> Effect (Effect Unit)

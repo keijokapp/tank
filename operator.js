@@ -232,7 +232,7 @@ function initActuator(id, getControl) {
 		up.setAttribute('fill', a > 0 ? 'orange' : 'gray');
 		down.setAttribute('fill', a < 0 ? 'orange' : 'gray');
 		set(Math.sign(a));
-		if (a === 0) {
+		if (a !== 0) {
 			zeroTimeout = setTimeout(() => {
 				set();
 			}, 1000);
