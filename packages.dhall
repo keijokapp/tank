@@ -7,6 +7,12 @@ let overrides = {
 	}
 }
 
-let additions = {=}
+let additions = {
+  web-cssom-view = {
+		repo = "https://github.com/keijokapp/purescript-web-cssom-view.git",
+		version = "master",
+		dependencies = [ "web-events", "web-html" ]
+	}
+}
 
 in  upstream // overrides // additions

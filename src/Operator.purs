@@ -12,10 +12,10 @@ import Data.Map (Map)
 import Data.Map as Map
 import Data.Set (Set)
 import Data.Set as Set
-import Data.Maybe (Maybe(Nothing, Just), maybe, fromJust)
+import Data.Maybe (Maybe(Nothing, Just), maybe, fromJust, isJust)
 import Effect (Effect)
 import Effect.Class (liftEffect)
-import Effect.Console (warn)
+import Effect.Console (warn, log)
 import Effect.Exception (Error)
 import Effect.Promise (Promise, runPromise)
 import Effect.Promise (class Deferred, promise) as Promise
@@ -32,7 +32,7 @@ import Web.UIEvent.PointerEvent (PointerEvent)
 import Web.UIEvent.PointerEvent as PointerEvent
 import Web.UIEvent.KeyboardEvent (KeyboardEvent)
 import Web.UIEvent.KeyboardEvent as KeyboardEvent
-import Web.DOM.Element (setAttribute)
+import Web.DOM.Element (Element, setAttribute)
 import Web.DOM.ParentNode (QuerySelector(QuerySelector), querySelector)
 import Web.DOM.Document (Document)
 import Web.DOM.Document as Document
@@ -50,7 +50,7 @@ import PeerConnection (createPeerConnection)
 import Playback (setPlaybackVideo, setPlaybackAudio)
 import Signaling (PeerId, PeerType(Operator, Tank), peerId, subscribePeer, sendSdp, sendIce, subscribeSdp, subscribeIce)
 import Track (VideoTrack)
-import Gamepad (GamepadControl)
+import Gamepad as Gamepad
 import Util (nextTick)
 
 newtype PendingPeer = PendingPeer (Ref.Ref (Either { requestSubscribers :: Map Int RequestCallback, sendAudio :: Boolean, subscriberId :: Int } { requestSubscribers :: Map Int (Effect Unit), peer :: Peer }))
@@ -60,6 +60,8 @@ main :: Effect Unit
 main = do
   peer <- initPendingPeer
   setControl <- initControls (sendMessage peer)
+  setJoystick <- initJoystick setControl
+  initJoystickControl "ArrowUp" "ArrowDown" "ArrowLeft" "ArrowRight" Gamepad.LeftAxisH Gamepad.LeftAxisV setJoystick
   pure unit
 
 initPendingPeer :: Effect PendingPeer
@@ -172,7 +174,7 @@ sendRequest (PendingPeer pendingPeer) request = do
 initJoystick :: (String -> Maybe Number -> Effect Unit) -> Effect (JoystickCoordinates -> Effect Unit)
 initJoystick getControl' = do
   document <- window >>= document
-  joystickElement <- unsafePartial <<< (\x -> fromJust x) <$> querySelector (QuerySelector "joystick-position") (toParentNode document)
+  joystickElement <- unsafePartial <<< (\x -> fromJust x) <$> querySelector (QuerySelector "#joystick-position") (toParentNode document)
   zeroTimeoutRef <- Ref.new Nothing
   pure (set joystickElement zeroTimeoutRef)
   where
@@ -199,8 +201,8 @@ initJoystick getControl' = do
 initActuator :: String -> (String -> Maybe Number -> Effect Unit) -> Effect (Number -> Effect Unit)
 initActuator id getControl' = do
   document <- window >>= document
-  up <- unsafePartial <<< (\x -> fromJust x) <$> querySelector (QuerySelector (id <> "-up")) (toParentNode document)
-  down <- unsafePartial <<< (\x -> fromJust x) <$> querySelector (QuerySelector (id <> "-down")) (toParentNode document)
+  up <- unsafePartial <<< (\x -> fromJust x) <$> querySelector (QuerySelector ("#" <> id <> "-up")) (toParentNode document)
+  down <- unsafePartial <<< (\x -> fromJust x) <$> querySelector (QuerySelector ("#" <> id <> "-down")) (toParentNode document)
   zeroTimeoutRef <- Ref.new Nothing
   pure (set up down zeroTimeoutRef)
   where
@@ -219,13 +221,13 @@ initJoystickControl :: String
                     -> String
                     -> String
                     -> String
-                    -> GamepadControl
-                    -> GamepadControl
+                    -> Gamepad.Control
+                    -> Gamepad.Control
                     -> (JoystickCoordinates -> Effect Unit)
                     -> Effect Unit
 initJoystickControl up down left right axisH axisV set = do
   document <- window >>= document
-  joystick <- (unsafePartial <<< \x -> fromJust x) <<< (_ >>= HTMLElement.fromElement) <$> querySelector (QuerySelector "joystick") (toParentNode document)
+  joystick <- (unsafePartial <<< \x -> fromJust x) <<< (_ >>= HTMLElement.fromElement) <$> querySelector (QuerySelector "#joystick-position") (toParentNode document)
   setByMouseRef <- Ref.new false
   keyboardStateRef <- Ref.new Set.empty
   addPointerEventListener "pointerdown" (onPointerDown joystick setByMouseRef) joystick

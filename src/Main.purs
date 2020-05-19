@@ -1,14 +1,8 @@
 module Main where
 
-import Prelude (Unit, show, (>>=), (<<<), (>>>))
+import Prelude
 import Effect (Effect)
-import Data.Maybe
-import Effect.Console (log)
-import Data.Maybe
-
-data Loom = Koer | Kass
-
-foreign import loom :: Loom -> Loom -> Int -> Maybe Int -> Effect Unit
+import Operator as Operator
 
 main :: Effect Unit
-main = loom Koer Kass 3 Nothing
+main = Operator.main

@@ -68,7 +68,7 @@ function loop() {
 	requestAnimationFrame(loop);
 }
 
-exports.subscribeGamepad = control => subscriber => () => {
+exports.subscribe = control => subscriber => () => {
 	const subscriberObject = {
 		subscriber,
 		getter: accessors[control.constructor.name],
