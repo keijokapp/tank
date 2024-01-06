@@ -1,0 +1,53 @@
+package:
+  name: tank
+  build:
+    strict: true
+  dependencies:
+  - argonaut-core
+  - arrays
+  - console
+  - datetime
+  - effect
+  - either
+  - exceptions
+  - foldable-traversable
+  - foreign-object
+  - functions
+  - integers
+  - js-timers
+  - maybe
+  - numbers
+  - ordered-collections
+  - partial
+  - prelude
+  - refs
+  - transformers
+  - tuples
+  - unfoldable
+  - web-cssom-view
+  - web-dom
+  - web-events
+  - web-geometry
+  - web-html
+  - web-pointerevents
+workspace:
+  extra_packages:
+    promises:
+      git: https://github.com/thimoteus/purescript-promises.git
+      ref: master
+      dependencies:
+      - aff
+      - console
+      - datetime
+      - exceptions
+      - prelude
+      - transformers
+    web-cssom-view:
+      path: ../purescript-web-cssom-view
+    web-pointerevents:
+      git: https://github.com/keijokapp/purescript-web-pointerevents.git
+      ref: master
+      dependencies:
+      - web-uievents
+  package_set:
+    url: 47.12.0
