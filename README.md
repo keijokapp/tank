@@ -3,7 +3,6 @@ This repository contains the software and other files used for my RC model tank.
 ## Hardware overview
 
  - WT-500S model tank (does not include power and control electronics)
- - 2 actuators used as robotic arm - the hand itself is not fully designed yet
  - a modern smart phone with USB-OTG support
  - Arduino Micro
  - Motor drivers
